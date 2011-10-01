@@ -42,35 +42,45 @@ main = do
   getLine >>= \line -> case parse (parser 0) "" line of
     Left e -> print e
     Right t -> do
-      let alphabet = nub $ sort $ execWriter (getVars t)
-      when isTeX $ printf "\\documentclass{letter}\n\\begin{document}\n\\begin{tabular}{%s}\n" $ replicate (length alphabet+1) 'l'
-      putStr $ calate $ map pure alphabet ++ ["result"]
+      let var = nub $ sort $ execWriter (getVars t)
+          truth = map (\vs -> runReader (eval t) (zip var vs)) (mapM (const [False,True]) [1..length var])
+          disjunctive = map snd $ filter fst $ zip truth [0..]
+          conjunctive = reverse $ map (((2^length var-1)-) . snd) $ filter (not . fst) $ zip truth [0..]
+
       if isTeX
-        then putStrLn "\\\\\n\\hline"
-        else putStrLn ""
-      let trueness = map (\vs -> runReader (eval t) (zip alphabet vs)) (mapM (const [False,True]) [1..length alphabet])
-      forM_ (mapM (const [False,True]) [1..length alphabet]) $ \vs -> do
-        putStr $ calate $ map (show . fromBool) $ vs ++ [runReader (eval t) (zip alphabet vs)]
+        then do
+        printf "\\documentclass[12pt]{article}\n\\parindent 0em\n\\pagestyle{empty}\n\\begin{document}\n\\begin{tabular}{%s}\n" $ replicate (length var+1) 'l'
+        putStrLn $ (++"\\\\\n\\hline") . intercalate " & " $ map (("\\textit{"++) . (++"}")) $ map pure var ++ ["result"]
+        else putStrLn $ intercalate " " $ map pure var ++ [line]
+
+      forM_ (zip truth $ mapM (const [False,True]) [1..length var]) $ \(b,vs) -> do
+        putStr $ calate $ map (show . fromBool) $ vs ++ [b]
         if isTeX
           then putStrLn "\\\\"
           else putStrLn ""
-      when isTeX $ putStrLn "\\end{tabular}"
-      
-      let disjunctive = map snd $ filter fst $ zip trueness [0..]
-          conjunctive = reverse $ map (((2^length alphabet-1)-) . snd) $ filter (not . fst) $ zip trueness [0..]
-      printf "%salphabet: %s\n" (if isTeX then "\n" else "") alphabet
-      printf "%sprincipal disjunctive normal form: " (if isTeX then "\\\\" else "")
+
+      when isTeX $ putStrLn "\\end{tabular}\n"
+      putStr "propositional variables: "
+      if isTeX
+        then putStrLn $ ('$':).(++"$") $ intercalate "\\;" $ map pure var
+        else putStrLn $ intersperse ' ' var
+
+      when isTeX $ putStrLn ""
+      putStr "principal disjunctive normal form: "
       if null disjunctive
         then putStrLn "empty"
-        else let ls = intercalate "," $ map show $ disjunctive
+        else let ls = intercalate "," $ map show disjunctive
              in if isTeX
                 then printf "$\\bigvee{}_{%s}$\n" ls
                 else putStrLn ls
-      printf "%sprincipal conjunctive normal form: " (if isTeX then "\\\\" else "")
+
+      when isTeX $ putStrLn ""
+      putStr "principal conjunctive normal form: "
       if null conjunctive
         then putStrLn "empty"
-        else let ls = intercalate "," $ map show $ conjunctive
+        else let ls = intercalate "," $ map show conjunctive
              in if isTeX
                 then printf "$\\bigwedge{}_{%s}$\n" ls
                 else putStrLn ls
+
   when isTeX $ putStrLn "\\end{document}"
