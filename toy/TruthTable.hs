@@ -12,20 +12,19 @@ type Table = [(Char, Bool)]
   
 data Tree = Equiv Tree Tree | Imply Tree Tree | Not Tree | And Tree Tree | Or Tree Tree | Var Char deriving (Show)
 
-parser :: Int -> CharParser st Tree
+parser :: Int -> WriterT String (CharParser st) Tree
 parser d = if d < 4
-           then foldl1 ([Equiv,Imply,Or,And]!!d) <$> go
-           else (char '!' >> parser d >>= pure . Not) <|> (alphaNum >>= pure . Var) <|> (char '(' *> parser 0 <* char ')')
+           then go >>= \x -> lift (return (foldl1 ([Equiv,Imply,Or,And]!!d) x))
+           else (lift (char '!') >> parser d >>= return . Not) <|> (lift alphaNum >>= \c -> tell [c] >> return (Var c)) <|> (lift (char '(') *> parser 0 <* lift (char ')'))
   where
-    go = parser (d+1) >>= \x -> optionMaybe (string (["<->","->","|","&"]!!d) *> go) >>= \y -> pure $ maybe [x] (x:) y
-
-getVars :: Tree -> Writer [Char] ()
-getVars (Var c) = tell [c]
-getVars (Not x) = getVars x
-getVars (And x y) = getVars x >> getVars y
-getVars (Or x y) = getVars x >> getVars y
-getVars (Imply x y) = getVars x >> getVars y
-getVars (Equiv x y) = getVars x >> getVars y
+    go :: WriterT String (CharParser st) [Tree]
+    go = do
+      x <- parser (d+1)
+      m <- lift $ optionMaybe (string (["<->","->","|","&"]!!d))
+      if m == Nothing
+        then return [x]
+        else go >>= return . (x:)
+-- parser (d+1) >>= \x -> optionMaybe (lift (string (["<->","->","|","&"]!!d)) *> go) >>= \y -> return (maybe [x] (x:) y)
 
 eval :: Tree -> Reader Table Bool
 eval (Var c) = fromJust <$> asks (lookup c)
@@ -39,10 +38,10 @@ main = do
   args <- getArgs
   let isTeX = length args > 0 && (head args == "-t" || head args == "--tex")
   let calate = intercalate $ if isTeX then " & " else " "
-  getLine >>= \line -> case parse (parser 0) "" line of
+  getLine >>= \line -> case parse (runWriterT (parser 0)) "" line of
     Left e -> print e
-    Right t -> do
-      let var = nub $ sort $ execWriter (getVars t)
+    Right (t, var') -> do
+      let var = nub $ sort var'
           truth = map (\vs -> runReader (eval t) (zip var vs)) (mapM (const [False,True]) [1..length var])
           disjunctive = map snd $ filter fst $ zip truth [0..]
           conjunctive = reverse $ map (((2^length var-1)-) . snd) $ filter (not . fst) $ zip truth [0..]
