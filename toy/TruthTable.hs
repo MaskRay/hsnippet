@@ -1,7 +1,6 @@
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Writer
-import Data.Char
 import Data.List
 import Data.Maybe
 import Foreign.Marshal.Utils
@@ -16,9 +15,11 @@ type Table = [(Char, Bool)]
 data Tree = Equiv Tree Tree | Imply Tree Tree | Not Tree | And Tree Tree | Or Tree Tree | Var Char deriving (Show)
 
 parser :: Int -> WriterT String (CharParser st) Tree
-parser d = if d < 4
-           then go >>= \x -> lift (return (foldl1 ([Equiv,Imply,Or,And]!!d) x))
-           else liftM Not (lift (char '!') >> parser d) <|> (lift alphaNum >>= \c -> tell [c] >> return (Var c)) <|> (lift (char '(') *> parser 0 <* lift (char ')'))
+parser d = lift spaces *>
+           (if d < 4
+            then go >>= \x -> lift (return (foldl1 ([Equiv,Imply,Or,And]!!d) x))
+            else liftM Not (lift (char '!') >> parser d) <|> (lift alphaNum >>= \c -> tell [c] >> return (Var c)) <|> (lift (char '(') *> parser 0 <* lift (char ')'))
+           ) <* lift spaces
   where
     go :: WriterT String (CharParser st) [Tree]
     go = do
@@ -70,7 +71,7 @@ main = do
     
            else do
              let calate = intercalate $ if isTeX then " & " else " "
-             getLine >>= \line -> case parse (runWriterT (parser 0 <* lift eof)) "" (filter (not . isSpace) line) of
+             getLine >>= \line -> case parse (runWriterT (parser 0 <* lift eof)) "" line of
                Left e -> hPrint stderr e >> exitFailure
                Right (t, var') -> do
                  let var = nub $ sort var'
