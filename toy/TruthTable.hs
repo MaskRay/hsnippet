@@ -1,6 +1,7 @@
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Writer
+import Data.Char
 import Data.List
 import Data.Maybe
 import Foreign.Marshal.Utils
@@ -69,7 +70,7 @@ main = do
     
            else do
              let calate = intercalate $ if isTeX then " & " else " "
-             getLine >>= \line -> case parse (runWriterT (parser 0)) "" line of
+             getLine >>= \line -> case parse (runWriterT (parser 0 <* lift eof)) "" (filter (not . isSpace) line) of
                Left e -> hPrint stderr e >> exitFailure
                Right (t, var') -> do
                  let var = nub $ sort var'
