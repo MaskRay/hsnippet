@@ -4,17 +4,15 @@ import Data.IORef
 import Control.Monad.Reader
 import Control.Monad.State
 import Text.ParserCombinators.Parsec hiding ((<|>))
+import qualified Text.PrettyPrint as PP
 
 data Tree = Equiv Tree Tree | Imply Tree Tree | Not Tree | And Tree Tree | Or Tree Tree | Var Char deriving (Ord, Eq)
 
 parser :: Int -> CharParser st Tree
-parser d = spaces *>
-           (if d < 4
-            then foldl1 ([Equiv,Imply,Or,And]!!d) <$> go
-            else (oneOf "~!" >> parser d >>= pure . Not) <|> (alphaNum >>= pure . Var) <|> (char '(' *> parser 0 <* char ')')
-           ) <* spaces
-  where
-    go = parser (d+1) >>= \x -> optionMaybe ((foldl1 (<|>) $ map string ([["=","<->"],[">","->"],["+","|"],["*","&",""]]!!d)) *> go) >>= \y -> pure $ maybe [x] (x:) y
+parser d = between spaces spaces (if d < 4
+            then chainr1 (parser (d+1)) $ ([Equiv,Imply,Or,And]!!d) <$ choice (map string ([["=","<->"],[">","->"],["+","|"],["*","&",""]]!!d))
+            else Not <$> (oneOf "~!" *> parser d) <|> Var <$> alphaNum <|> between (char '(') (char ')') (parser 0)
+           )
 
 instance Show Tree where
   showsPrec _ (Var c) = showChar c
@@ -37,8 +35,8 @@ wh = do
       S{l=x, ll=xx, r=y, rr=yy} <- ask
       lift $ modifyIORef ref succ
       curNum <- lift $ readIORef ref
-      lift . putStr $ "(" ++ show curNum ++ ") " ++ show (xx++x) ++ " =s=> " ++ show (yy++y)
-      lift . putStrLn $ "   (" ++ show prevNum ++ ") " ++ rule
+      liftIO . putStrLn . PP.render $ PP.text ("(" ++ show curNum ++ ") " ++ show (xx++x) ++ " =s=> " ++ show (yy++y)) PP.$$
+        PP.nest 30 (PP.text ("(" ++ show prevNum ++ ") " ++ rule))
   case x of
     Var c:x' -> local (\s->s{l=x', ll=Var c:xx}) wh
     Not a:x' -> local (\s->s{l=x', r=a:y}) (output "~ =>" >> wh)
@@ -54,7 +52,7 @@ wh = do
       Or a b:y' -> local (\s->s{r=a:b:y'}) (output "=> +" >> wh)
       Imply a b:y' -> local (\s->s{l=a:x, r=b:y'}) (output "=> >" >> wh)
       Equiv a b:y' -> (&&) <$> local (\s->s{l=a:x, r=b:y'}) (output "= =>" >> wh) <*> local (\s->s{l=b:x, r=a:y'}) (output "=> =" >> wh)
-  
+
       _ -> modify (prevNum:) >> return (intersect xx yy /= [])
 
 main = do
