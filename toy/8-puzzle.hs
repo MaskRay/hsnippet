@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, ViewPatterns #-}
+{-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances, ViewPatterns #-}
 import Control.Monad
 import Data.List
 import Data.Maybe
@@ -33,15 +33,9 @@ moves s = [ map (\x -> if x == 0 then s!!pos' else if x == s!!pos' then 0 else x
   where
     pos = fromJust $ findIndex (==0) s
 
-solve :: State -> IO ()
-solve src = do
-    let ss = if fromEnum src == target' then M.singleton 0 (-1)
-             else
-#ifdef BFS
-                 bfs (Seq.singleton src) $ M.singleton (fromEnum src) (-1)
-#else
-                 astar (SS.singleton (heuristic src, src)) $ M.singleton (fromEnum src) (-1)
-#endif
+solve :: (State -> M.Map Int Int) -> State -> IO ()
+solve strategy src = do
+    let ss = if fromEnum src == target' then M.singleton 0 (-1) else strategy src
     if odd (inverse (delete 0 src) - inverse (delete 0 target))
        then hPrint stderr "no solution"
        else do
@@ -65,16 +59,6 @@ solve src = do
         | otherwise = 1 + getAncestors (fromJust $ M.lookup s m) m
     inverse = (\(_,acc) -> acc) . foldr (\x (l,acc) -> (x:l,acc+length(filter(<x)l))) ([],0)
 
-bfs :: Seq.Seq State -> M.Map Int Int -> M.Map Int Int
-bfs (Seq.viewl -> s Seq.:< ss) closed
-    | isJust $ find (==target') suc' = closed'
-    | otherwise = bfs (ss Seq.>< Seq.fromList suc) closed'
-  where
-    suc = filter (not . flip M.member closed . fromEnum) $ moves s
-    suc' = map fromEnum suc
-    num = fromEnum s
-    closed' = M.union closed $ M.fromList $ zip suc' (repeat num)
-
 heuristic :: State -> Int
 heuristic x = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) $ [0..] `zip` x
   where
@@ -83,16 +67,34 @@ heuristic x = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) $ [0
         (x1,y1) = p `divMod` 3
         (x2,y2) = q `divMod` 3
 
-astar :: SS.MultiSet (Int, State) -> M.Map Int Int -> M.Map Int Int
-astar (SS.minView -> Just ((c,s),ss)) closed
+search :: (t -> (s, t)) -> (s -> State) -> ((s, t) -> [State] -> t) -> t -> M.Map Int Int -> M.Map Int Int
+search extract transform merge open closed
     | isJust $ find (==target') suc' = closed'
-    | otherwise = astar (SS.union ss $ SS.fromList $ map (\q -> (c - heuristic s + 1 + heuristic q, q)) suc) closed'
+    | otherwise = search extract transform merge (merge (s,ss) suc) closed'
   where
-    suc = filter (not . flip M.member closed . fromEnum) $ moves s
+    (s,ss) = extract open
+    suc = filter (not . flip M.member closed . fromEnum) . moves $ transform s
     suc' = map fromEnum suc
-    num = fromEnum s
+    num = fromEnum $ transform s
     closed' = M.union closed $ M.fromList $ zip suc' (repeat num)
+
+bfs :: State -> M.Map Int Int
+bfs src = search extract id merge (Seq.singleton src) $ M.singleton (fromEnum src) (-1)
+  where
+    extract = (\(h Seq.:< t) -> (h, t)) . Seq.viewl
+    merge (h,open') suc = open' Seq.>< Seq.fromList suc
+
+astar :: State -> M.Map Int Int
+astar src = search extract snd merge (SS.singleton (heuristic src, src)) $ M.singleton (fromEnum src) (-1)
+  where
+    extract = fromJust . SS.minView
+    merge ((c,p),open') suc = SS.union open' $ SS.fromList $ map (\q -> (c - heuristic p + 1 + heuristic q, q)) suc
 
 main = do
     line <- getLine
-    solve $ map (read . return) line
+    return ()
+#ifdef BFS
+    solve bfs $ map (read . return) line
+#else
+    solve astar $ map (read . return) line
+#endif
