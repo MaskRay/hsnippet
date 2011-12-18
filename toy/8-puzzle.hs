@@ -1,4 +1,14 @@
 {-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances, ViewPatterns #-}
+{-
+Input "123485760"
+stands for
+
+1 2 3
+4 8 5
+7 6 0
+
+Add -g to generate code for graphviz
+ -}
 import Control.Monad
 import Data.List
 import Data.Maybe
@@ -6,6 +16,7 @@ import Data.Function
 import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import qualified Data.MultiSet as SS
+import System.Environment
 import System.IO
 
 type State = [Int]
@@ -15,12 +26,14 @@ target' = fromEnum target
 factorials = 1 : scanl1 (*) [1..]
 
 instance Enum State where
-    fromEnum a = (\(_,_,acc) -> acc) $ foldr (\x (i,l,acc) -> (i+1,x:l,acc+(factorials!!i)*length (filter (<x) l))) (0,[],0) a
-    toEnum acc = unfoldr (\(i,l,acc) ->
-        if i < 0 then Nothing
-        else let x = l !! (acc `div` (factorials!!i))
-             in Just (x, (i-1,delete x l,acc `mod` (factorials!!i)))
-            ) (8,[0..8],acc)
+  fromEnum a = (\(_,_,acc) -> acc) $ foldr (\x (i,l,acc) ->
+      (i+1,x:l,acc+(factorials!!i)*length (filter (<x) l))) (0,[],0) a
+  toEnum acc = unfoldr (\(i,l,acc) ->
+      if i < 0 then Nothing
+      else let (q,r) = acc `divMod` (factorials !! i)
+               x = l !! q
+           in Just (x, (i-1,delete x l,r))
+          ) (8,[0..8],acc)
 
 moves :: State -> [State]
 moves s = [ map (\x -> if x == 0 then s!!pos' else if x == s!!pos' then 0 else x) s
@@ -37,38 +50,37 @@ solve :: (State -> M.Map Int Int) -> State -> IO ()
 solve strategy src = do
     let ss = if fromEnum src == target' then M.singleton 0 (-1) else strategy src
     if odd (inverse (delete 0 src) - inverse (delete 0 target))
-       then hPrint stderr "no solution"
-       else do
-            hPrint stderr $ getAncestors (fromEnum target) ss
-            putStrLn "digraph G {"
-            forM_ (nub $ M.keys ss) $ \s ->
-                putStrLn $ show s ++ " [shape=record" ++
-                    (if s == fromEnum src
-                     then ",style=filled,color=orange"
-                     else if s == fromEnum target
-                          then ",style=filled,color=orchid"
-                          else "") ++ ",label=\""++label s++"\"];"
-            forM_ (filter ((/=fromEnum src) . fst) $ M.toList ss) $ \(s,p) ->
-                putStrLn $ show p ++ "->" ++ show s ++ ";"
-            putStrLn "}"
+       then hPutStrLn stderr "no solution"
+       else getArgs >>= \args -> if (elem "-g" args)
+            then do
+                putStrLn "digraph {"
+                forM_ (nub $ M.keys ss) $ \s ->
+                    putStrLn $ show s ++ " [shape=record" ++
+                        (if s == fromEnum src
+                         then ",style=filled,color=orange"
+                         else if s == fromEnum target
+                              then ",style=filled,color=orchid"
+                              else "") ++ ",label=\""++label s++"\"];"
+                forM_ (filter ((/=fromEnum src) . fst) $ M.toList ss) $ \(s,p) ->
+                    putStrLn $ show p ++ "->" ++ show s ++ ";"
+                putStrLn "}"
+            else
+                hPutStrLn stderr $ "minimum steps: " ++ show (pathLen (fromEnum target) ss)
   where
-    label s = intercalate "|" . map (('{':).(++"}") . intersperse '|' . concatMap show . map snd) . transpose . groupBy ((/=) `on` fst) $ zip (cycle [1..3]) (toEnum s :: State)
-    getAncestors :: Int -> M.Map Int Int -> Int
-    getAncestors s m
-        | s == fromEnum src = 0
-        | otherwise = 1 + getAncestors (fromJust $ M.lookup s m) m
+    label = intercalate "|" . map (('{':).(++"}") . intersperse '|' . concatMap show . map snd) . transpose . groupBy ((/=) `on` fst) . zip (cycle [1..3]) . (toEnum :: Int -> State)
+    pathLen s m | s == fromEnum src = 0
+                | otherwise = 1 + pathLen (fromJust $ M.lookup s m) m
     inverse = snd . foldr (\x (l,acc) -> (x:l,acc+length(filter(<x)l))) ([],0)
 
 search :: (t -> (s, t)) -> (s -> State) -> ((s, t) -> [State] -> t) -> t -> M.Map Int Int -> M.Map Int Int
 search extract transform merge open closed
     | isJust $ find (==target') suc' = closed'
-    | otherwise = search extract transform merge (merge (s,ss) suc) closed'
+    | otherwise = search extract transform merge (merge (h,open') suc) closed'
   where
-    (s,ss) = extract open
-    suc = filter (not . flip M.member closed . fromEnum) . moves $ transform s
+    (h,open') = extract open
+    suc = filter (not . flip M.member closed . fromEnum) . moves $ transform h
     suc' = map fromEnum suc
-    num = fromEnum $ transform s
-    closed' = M.union closed $ M.fromList $ zip suc' (repeat num)
+    closed' = M.union closed . M.fromList . zip suc' . repeat . fromEnum $ transform h
 
 bfs :: State -> M.Map Int Int
 bfs src = search extract id merge (Seq.singleton src) $ M.singleton (fromEnum src) (-1)
@@ -81,7 +93,7 @@ astar src = search extract snd merge (SS.singleton (heuristic src, src)) $ M.sin
   where
     extract = fromJust . SS.minView
     merge ((c,p),open') suc = SS.union open' $ SS.fromList $ map (\q -> (c - heuristic p + 1 + heuristic q, q)) suc
-    heuristic x = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) $ [0..] `zip` x
+    heuristic = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) . zip [0..]
       where
         distance p q = abs (x1-x2) + abs (y1-y2)
           where
@@ -90,7 +102,6 @@ astar src = search extract snd merge (SS.singleton (heuristic src, src)) $ M.sin
 
 main = do
     line <- getLine
-    return ()
 #ifdef BFS
     solve bfs $ map (read . return) line
 #else
