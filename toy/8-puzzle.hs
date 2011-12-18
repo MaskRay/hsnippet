@@ -41,31 +41,23 @@ solve strategy src = do
        else do
             hPrint stderr $ getAncestors (fromEnum target) ss
             putStrLn "digraph G {"
-            forM_ (nub $ M.keys ss) $ \s -> do
+            forM_ (nub $ M.keys ss) $ \s ->
                 putStrLn $ show s ++ " [shape=record" ++
                     (if s == fromEnum src
                      then ",style=filled,color=orange"
                      else if s == fromEnum target
                           then ",style=filled,color=orchid"
                           else "") ++ ",label=\""++label s++"\"];"
-            forM_ (filter ((/=fromEnum src) . fst) $ M.toList ss) $ \(s,p) -> do
+            forM_ (filter ((/=fromEnum src) . fst) $ M.toList ss) $ \(s,p) ->
                 putStrLn $ show p ++ "->" ++ show s ++ ";"
             putStrLn "}"
   where
-    label s = intercalate "|" $ map (('{':).(++"}")) $ map (intersperse '|' . concatMap show . map snd) $ transpose $ groupBy ((/=) `on` fst) $ zip (cycle [1..3]) (toEnum s :: State)
+    label s = intercalate "|" . map (('{':).(++"}") . intersperse '|' . concatMap show . map snd) . transpose . groupBy ((/=) `on` fst) $ zip (cycle [1..3]) (toEnum s :: State)
     getAncestors :: Int -> M.Map Int Int -> Int
     getAncestors s m
         | s == fromEnum src = 0
         | otherwise = 1 + getAncestors (fromJust $ M.lookup s m) m
-    inverse = (\(_,acc) -> acc) . foldr (\x (l,acc) -> (x:l,acc+length(filter(<x)l))) ([],0)
-
-heuristic :: State -> Int
-heuristic x = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) $ [0..] `zip` x
-  where
-    distance p q = abs (x1-x2) + abs (y1-y2)
-      where
-        (x1,y1) = p `divMod` 3
-        (x2,y2) = q `divMod` 3
+    inverse = snd . foldr (\x (l,acc) -> (x:l,acc+length(filter(<x)l))) ([],0)
 
 search :: (t -> (s, t)) -> (s -> State) -> ((s, t) -> [State] -> t) -> t -> M.Map Int Int -> M.Map Int Int
 search extract transform merge open closed
@@ -89,6 +81,12 @@ astar src = search extract snd merge (SS.singleton (heuristic src, src)) $ M.sin
   where
     extract = fromJust . SS.minView
     merge ((c,p),open') suc = SS.union open' $ SS.fromList $ map (\q -> (c - heuristic p + 1 + heuristic q, q)) suc
+    heuristic x = sum . map (\(x,y) -> distance x (y-1)) . filter ((/=0) . snd) $ [0..] `zip` x
+      where
+        distance p q = abs (x1-x2) + abs (y1-y2)
+          where
+            (x1,y1) = p `divMod` 3
+            (x2,y2) = q `divMod` 3
 
 main = do
     line <- getLine
