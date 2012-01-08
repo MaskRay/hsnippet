@@ -1,3 +1,6 @@
+module RankingSuffixes (
+  rank, rankTails1
+  ) where
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
@@ -16,5 +19,3 @@ rankTails1 = liftM3 applyUntil (((and . elems).) . (.flip zip (repeat True)) . a
   where
     reorder = (rank.) . (zip <*>) . ((++ repeat (-1)).) . drop
     applyUntil p fs x = head . dropWhile (not . p) $ scanl (flip ($)) x fs
-
-main = getLine >>= print . rankTails1
