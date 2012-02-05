@@ -1,0 +1,32 @@
+# booleans
+true = \t.\f.t
+false = \t.\f.f
+test = \g.\t.\f.g t f
+and = \a.\b.a b false
+or = \a.\b.a true b
+
+# numerals
+c0 = false
+c1 = \s.\z. s z
+c2 = \s.\z. s (s z)
+c3 = \s.\z. s (s (s z))
+
+succ = \n.\s.\z. s (n s z)
+pred = \n.\s.\z. n (\f.\g. g (f s)) (\x.z)
+plus = \m.\n.\s.\z. m s (n s z)
+sub = \m.\n. n pred m
+mult = \m.\n.\s.\z. m (n s) z
+zero? = \n. n (\x.false) true
+equal? = \m.\n. and (zero? (sub m n)) (zero? (sub n m))
+
+# pairs
+pair = \fst.\snd.\b. b fst snd
+fst = \p. p true
+snd = \p. p false
+
+# lists
+nil = pair true true
+nil? = fst
+cons = \h.\t. pair fls (pair h t)
+car = \l. fst (snd l)
+cdr = \l. snd (snd l)
