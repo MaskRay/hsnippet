@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, NoMonomorphismRestriction, RankNTypes, ScopedTypeVariables, TupleSections, TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances, RankNTypes, TupleSections #-}
 
 import Control.Arrow
 import Control.Monad
